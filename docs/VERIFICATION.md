@@ -1,0 +1,40 @@
+# Verification Register
+
+One row per assumption that isn't verified yet.
+
+**Status** values:
+- `open`: not checked
+- `partial`: some evidence, not conclusive
+- `verified`: confirmed against the source listed
+- `refuted`: the assumption is wrong, and a fix is planned
+
+🔧 means it needs the owner's physical hardware.
+
+Retrieval date for every web source: **2026-10-21**.
+
+| ID | Claim | Where in code | How to verify | Source | Status |
+|---|---|---|---|---|---|
+| VER-001 | The current DoD roots are "DoD Root CA 3, 4, 5, 6" | `cert_store.rs` `KNOWN_DOD_ROOTS` | Compare against the current DISA PKCS#7 bundle README and the Windows 11 STIG. Pin by thumbprint. Candidates (unconfirmed): Root CA 3 SHA-1 `D73CA91102A2204A36459ED32213B467D7CE97FB` (exp. 2029-12-30), Root CA 6 SHA-1 `D37ECF61C0B4ED88681EF3630C4E2FC787B37AEF` (exp. 2053-01-24), Root CA 5 TBD | Win 11 STIG V-253427 (stigviewer mirror, v2r8 2026-05-19) lists only 3, 5, 6 | **refuted** (Root CA 4 is no longer listed). Thumbprints still open |
+| VER-002 | The DISA cert page is `https://public.cyber.mil/pki-pke/tools-configuration-files/` | `cert_store.rs` `DOD_CERT_PAGE_URL` | Fetch it and follow redirects. Confirm in a real browser that the bundle and InstallRoot are listed | It 302-redirects to `https://www.cyber.mil/pki-pke/tools-configuration-files/`, which renders client-side and wasn't readable by our fetcher | partial: update to the `www.cyber.mil` URL after a human browser check |
+| VER-003 | Middleware install paths (OpenSC, ActivClient `acpkcs211.dll`, SafeNet `eTPKCS11.dll`, PKard framework, Homebrew paths) | `middleware.rs` `known_candidates()` | Install each vendor's current release in a VM, record the real path, and check the vendor docs. For OpenSC, check the installer's `.wxs`/pkg layout on GitHub | Vendor docs | open (OpenSC is VM-checkable. ActivClient, SafeNet and PKard need licensed installers 🔧) |
+| VER-004 | `pkcs11.txt` lists modules as `library=<path>` lines, so a substring match works | `firefox_nss.rs` `module_registered_in_profile` | Read a real profile's `pkcs11.txt` (owner approval needed to read a profile). Compare with NSS `pk11pars` format docs | NSS source | open. Lower stakes after ADR-001: now used only to report leftovers |
+| VER-005 | macOS nested shell + AppleScript escaping is safe for paths with spaces, quotes and non-ASCII | `cert_store.rs` `shell_single_quote` / `applescript_escape` | Unit-test the escaping functions. On a Mac, install a test cert from `~/Test Dir/it's ünïcode/ca.cer` | — | **superseded** by ADR-004a (osascript removed). Re-test the new argv-based path on the Mac 🔧 |
+| VER-006 | The `pcsc` 2.x API (`Context::establish`, `list_readers`, `ReaderState::new`, `get_status_change`, `Error` PartialEq) matches the scaffold | `reader.rs` | `cargo check` and docs.rs for the resolved version | `cargo check` on 2026-10-21 against pcsc 2.9.0: clean (PLAN.md log) | **verified on Windows**. macOS cfg code is unchecked (P0.7 🔧) |
+| VER-007 | A cancelled UAC prompt makes PowerShell exit 1223 | `cert_store.rs` `install_one` (Windows) | On Windows, run the exact `Start-Process … -Verb RunAs -PassThru` command, cancel UAC, and record `$LASTEXITCODE` and stderr. Expected: `Start-Process` throws "The operation was canceled by the user", so the exit code is 1, not 1223 | Microsoft `Start-Process` docs | open (can be done on this dev machine without a card, but needs a human to click Cancel) |
+| VER-008 | `certutil -addstore` accepts a `.p7b` directly | `cert_store.rs` | `certutil -dump bundle.p7b` (read-only), then `-addstore` into a throwaway VM | certutil reference doesn't say | open. Low stakes: ADR-003 splits the bundle in Rust anyway |
+| VER-009 | `security add-trusted-cert` accepts a `.p7b` | `cert_store.rs` (macOS) | Run it on a Mac with the DISA bundle | `man security` says it takes one cert | open. Low stakes: ADR-003 |
+| VER-010 | macOS 13+ reads a CAC with no third-party software (CryptoTokenKit PIV), and Safari/Chrome/Firefox can use it | `middleware.rs` (new `OsNative`) | 🔧 Insert a CAC into an Apple Silicon Mac and run `sc_auth identities`, `security list-smartcards`, then a CAC login in each browser | Apple deployment guide "Intro to smart card integration" | partial (vendor doc yes, CAC-specific hardware test pending) |
+| VER-011 | Windows 11's inbox PIV minidriver exposes the CAC certificates DoD sites need, with no ActivClient | `middleware.rs` (new `OsNative`) | 🔧 Clean Windows 11 + CAC: run `certutil -scinfo` and list the certs, then try a CAC-protected DoD site in Edge and Firefox | MS inbox minidriver doc (PIV from Win7 SP1). militarycac.com says only PIV/Email certs are exposed | partial |
+| VER-012 | Intermediates belong in Windows `CA`, roots in `ROOT`, interop cross-certs in `Disallowed` | `cert_store.rs` (Phase 2 rewrite) | Compare with what DISA InstallRoot 5.6 does in a VM (the stores before and after) | Win 11 STIG V-253427/V-253429 | partial |
+| VER-013 | DISA has no current InstallRoot for macOS | docs / UI copy | Check the cyber.mil tools page in a real browser | Third-party (fossroot GitHub) | open |
+| VER-014 | Edge NMH registry key and macOS path | ADR-005 | Microsoft Edge native messaging docs | — | open |
+| VER-015 | An MV3 service worker can do one-shot `sendNativeMessage` without lifetime problems | ADR-005 | Chrome service worker lifecycle docs, plus a prototype | — | open |
+| VER-016 | Firefox 120 made OS root import (`security.enterprise_roots.enabled`) default true, so ESR 115 is still false | ADR-001 | Firefox 120 release notes on mozilla.org. `git log -S` on StaticPrefList.yaml | Secondary reports only | partial |
+| VER-017 | A public DoD-PKI test URL exists that the extension can probe for a client-cert prompt | ADR-005 | Find a DISA-published test page | — | open |
+| VER-018 | Tauri v2 builds a universal macOS binary with `--target universal-apple-darwin` | ADR-006 | Tauri CLI docs plus a CI run | — | open |
+| VER-019 | OV cert price range, and whether individuals are eligible for Azure Artifact Signing | ADR-006 | Artifact Signing FAQ (aka.ms/artifactsigningfaq). CA price pages | Azure pricing page ($9.99/mo Basic) | partial |
+| VER-020 | Chrome Web Store developer fee is $5 one-time | ADR-006 | Chrome Web Store developer docs | — | open |
+| VER-021 | The `security add-trusted-cert -d` run as a normal user shows the admin auth dialog and succeeds on macOS 13–26 | ADR-004a | 🔧 Run it on the owner's Mac with a test CA, then remove it | Apple dev forums 686068, mkcert #415 | open |
+| VER-022 | A 64-bit app reports 32-bit-only middleware as "invalid" rather than "wrong architecture" | `middleware.rs` `validate_pkcs11` | Read the PE header machine field before `LoadLibrary`, and test with OpenSC x86 in a VM | — | **refuted** by code reading: the scaffold can't tell them apart. Fix in Phase 2 |
+| VER-023 | The Windows trust check (`certutil -store Root` substring on CN) is locale-independent and sees the CurrentUser Root store | `cert_store.rs` `root_present` (Windows) | Run it on a non-English Windows VM. Note that it checks only LocalMachine. Phase 2 replaces it with thumbprint lookup through CryptoAPI or `certutil -store -v` | — | open |
+| VER-024 | `tauri.conf.json` identifier `helper.cac.app` is acceptable | `tauri.conf.json` | `cargo tauri build` warns when an identifier ends in `.app` | Tauri config docs | open (see Phase 0) |

@@ -101,21 +101,26 @@ cd cac-helper
 cargo tauri dev
 ```
 
-## Roadmap (not yet built)
+## Roadmap
 
-1. ✅ Reader detection
-2. ✅ Middleware detection (validates via PKCS#11 `C_GetFunctionList`,
-   does not install anything itself)
-3. ✅ DoD PKI trust store — read-only check built; install flow uses
-   scoped OS-native elevation prompts (UAC / Touch ID), not a fully
-   elevated app (see module 3 notes above for the untested macOS
-   quoting edge case)
-4. ✅ Firefox NSS registration — scaffolded via `modutil`; needs the tool
-   bundled/available and the `pkcs11.txt` format verified (see module 4
-   notes above)
-5. Browser extension (Chrome + Firefox) — talks to this app via Native
-   Messaging for in-browser diagnostics
-6. Code signing (Authenticode + Apple notarization) + auto-update channel
+The full plan is in [docs/PLAN.md](docs/PLAN.md). The decisions behind it are in
+[docs/DECISIONS.md](docs/DECISIONS.md), and open assumptions are in
+[docs/VERIFICATION.md](docs/VERIFICATION.md).
+
+| Phase | Goal | Version |
+|---|---|---|
+| 0 | Make the scaffold compile and run on Windows and macOS | 0.1.1 |
+| 1 | Verification sprint (DoD root thumbprints, DISA URL, middleware paths, OS-native CAC support) | 0.1.2 |
+| 2 | Harden modules 1–3: layered outcomes, native file picker, `.p7b`/`.zip` parsing, roots → Root / intermediates → CA, macOS install without osascript | 0.2.0 |
+| 3 | Firefox: replace `modutil` registration with a read-only diagnostic. Current Firefox uses OS client certs and OS trust by default | 0.3.0 |
+| 4 | Browser extension (Chrome, Edge, Firefox) + Native Messaging host | 0.4.0 |
+| 5 | Unified "Check everything" guided setup | 0.5.0 |
+| 6 | Code signing (Azure Artifact Signing / Apple Developer ID + notarization), installers, auto-update via GitHub Releases | 0.9.0 |
+| 7 | Beta testing on real hardware, then public release | 1.0.0 |
+
+> Note: the module notes above describe the 0.1.0 scaffold. Module 4's
+> `modutil` approach is being replaced in Phase 3 (see ADR-001), and the
+> macOS osascript install path in Phase 2 (see ADR-004a).
 
 ## Distribution notes
 
