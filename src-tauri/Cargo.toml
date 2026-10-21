@@ -1,0 +1,25 @@
+[package]
+name = "cac-helper"
+version = "0.1.0"
+description = "Unofficial CAC/smart card reader setup assistant"
+edition = "2021"
+
+[lib]
+name = "cac_helper_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Cross-platform PC/SC bindings (winscard on Windows, PCSC framework on macOS,
+# pcsc-lite on Linux). This is how we talk to the smart card reader.
+pcsc = "2"
+# Used to dynamically load candidate PKCS#11 middleware libraries and
+# sanity-check them via C_GetFunctionList.
+libloading = "0.8"
+# Opens the DISA cert download page in the user's default browser.
+open = "5"

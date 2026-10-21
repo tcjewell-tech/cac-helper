@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CAC Helper</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>CAC Helper</h1>
+    <p class="disclaimer">Unofficial tool. Not endorsed by DoD. Certs and drivers are fetched from official DISA sources.</p>
+
+    <section id="status-card">
+      <h2>Reader status</h2>
+      <div id="status">Checking for a smart card reader...</div>
+      <button id="check-btn">Re-check</button>
+    </section>
+
+    <section id="middleware-card">
+      <h2>Middleware status</h2>
+      <div id="middleware-status">Checking for CAC middleware...</div>
+      <button id="check-middleware-btn">Re-check</button>
+    </section>
+
+    <section id="trust-card">
+      <h2>DoD certificate trust</h2>
+      <div id="trust-status">Checking trust store...</div>
+      <button id="check-trust-btn">Re-check</button>
+      <button id="open-dod-page-btn">Open official DISA cert page</button>
+
+      <div class="install-row">
+        <label for="cert-paths">Cert file path(s) to install (comma-separated):</label>
+        <input type="text" id="cert-paths" placeholder="C:\Downloads\DoD_PKE_CA_chain.p7b" />
+        <button id="install-certs-btn">Install selected cert(s)</button>
+      </div>
+    </section>
+
+    <section id="nss-card">
+      <h2>Firefox recognition</h2>
+      <div id="nss-status">Run the middleware check above first.</div>
+      <button id="check-nss-btn">Re-check</button>
+      <p class="hint">Close Firefox before registering — the database can't be updated while it's running.</p>
+      <button id="register-nss-btn">Register module with Firefox</button>
+    </section>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
