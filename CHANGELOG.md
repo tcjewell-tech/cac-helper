@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - Planning docs: `docs/PLAN.md`, `docs/VERIFICATION.md`, `docs/DECISIONS.md`, `docs/TEST-MATRIX.md`.
+- Pass / warning / fail status badges before each status headline (`.badge`, `badge()` in `src/main.js`).
+
+### Fixed
+- Hint and path text contrast: `#888` → `#767676` (4.54:1 on white).
+- Button and input border contrast: `#ccc` → `#8f8f8f` (3.2:1 on white).
 
 ### Planned releases (see docs/PLAN.md)
 | Version | Phase | Contents |

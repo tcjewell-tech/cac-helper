@@ -28,7 +28,7 @@ h1 {
 
 .hint {
   font-size: 12px;
-  color: #888;
+  color: #767676;
   margin: 8px 0;
 }
 
@@ -50,12 +50,12 @@ h1 {
   box-sizing: border-box;
   padding: 6px 8px;
   margin-bottom: 8px;
-  border: 1px solid #ccc;
+  border: 1px solid #8f8f8f;
   border-radius: 6px;
 }
 
 .path {
-  color: #888;
+  color: #767676;
   font-size: 12px;
 }
 
@@ -73,7 +73,37 @@ button {
   margin-top: 12px;
   padding: 8px 16px;
   border-radius: 6px;
-  border: 1px solid #ccc;
+  border: 1px solid #8f8f8f;
   background: #f5f5f5;
   cursor: pointer;
+}
+
+/* Status badges differ in lightness and glyph, not just hue; the headline text still names the state. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+.badge.pass {
+  background: #1a7f37;
+  color: #fff;
+}
+
+.badge.warning {
+  background: #e0a100;
+  color: #1a1a1a;
+}
+
+.badge.fail {
+  background: #9b1c1c;
+  color: #fff;
 }

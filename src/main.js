@@ -1,19 +1,30 @@
 const { invoke } = window.__TAURI__.core;
 
+const BADGE_GLYPHS = { pass: "✓", warning: "!", fail: "✕" };
+
+// Decorative: the headline next to it already names the state.
+function badge(status) {
+  return status ? `<span class="badge ${status}" aria-hidden="true">${BADGE_GLYPHS[status]}</span>` : "";
+}
+
 const MESSAGES = {
   NoReaderFound: {
+    status: "fail",
     headline: "No reader detected.",
     detail: "Plug in your smart card reader. If it's already plugged in, the driver may not be installed yet — that's the next step.",
   },
   ReaderReadyNoCard: {
+    status: "warning",
     headline: "Reader found, no card inserted.",
     detail: "Insert your CAC. Make sure the gold chip is facing up and fully seated.",
   },
   CardUnreadable: {
+    status: "fail",
     headline: "Card detected but unreadable.",
     detail: "This usually means middleware is missing or the card is seated wrong. Try reseating the card, then re-check.",
   },
   CardPresent: {
+    status: "pass",
     headline: "Card readable.",
     detail: "The reader and card are working at the hardware level. Next: confirm DoD certs are trusted and Firefox can see the card.",
   },
@@ -32,7 +43,7 @@ async function checkReader() {
       .join("");
 
     statusEl.innerHTML = `
-      <p class="headline">${msg.headline}</p>
+      <p class="headline">${badge(msg.status)}${msg.headline}</p>
       <p class="detail">${msg.detail}</p>
       ${readerList ? `<ul>${readerList}</ul>` : ""}
     `;
@@ -43,14 +54,17 @@ async function checkReader() {
 
 const MIDDLEWARE_MESSAGES = {
   NotFound: {
+    status: "fail",
     headline: "No CAC middleware found.",
     detail: "Your reader may work, but the browser and OS won't be able to use the card without middleware. Install OpenSC (free, open source) or your reader vendor's official driver from the DoD-approved middleware list.",
   },
   FoundButInvalid: {
+    status: "fail",
     headline: "Middleware found but not working correctly.",
     detail: "A middleware install was detected but failed a basic validity check — likely a corrupt install or a 32-bit/64-bit mismatch. Try reinstalling the latest version for your system architecture.",
   },
   Valid: {
+    status: "pass",
     headline: "Middleware working.",
     detail: "A valid PKCS#11 module was found. Next: confirm DoD certs are trusted, and register the module with Firefox.",
   },
@@ -75,7 +89,7 @@ async function checkMiddleware() {
       .join("");
 
     statusEl.innerHTML = `
-      <p class="headline">${msg.headline}</p>
+      <p class="headline">${badge(msg.status)}${msg.headline}</p>
       <p class="detail">${msg.detail}</p>
       ${foundList ? `<ul>${foundList}</ul>` : ""}
     `;
@@ -97,14 +111,17 @@ window.addEventListener("DOMContentLoaded", () => {
 
 const TRUST_MESSAGES = {
   NotInstalled: {
+    status: "fail",
     headline: "DoD certs not found in trust store.",
     detail: "Your browser won't trust CAC-based logins yet. Download the official cert bundle from DISA and install it below.",
   },
   PartiallyInstalled: {
+    status: "warning",
     headline: "Some DoD roots found, but not all.",
     detail: "This can happen with an older or partial install. Re-installing the current bundle from DISA is the safest fix.",
   },
   Installed: {
+    status: "pass",
     headline: "DoD root certs are trusted.",
     detail: "The OS trust store has the current DoD PKI roots. Next: register the middleware module with Firefox (module 4).",
   },
@@ -120,7 +137,7 @@ async function checkTrust() {
     const rootsList = result.roots_found.map((r) => `<li>${r}</li>`).join("");
 
     statusEl.innerHTML = `
-      <p class="headline">${msg.headline}</p>
+      <p class="headline">${badge(msg.status)}${msg.headline}</p>
       <p class="detail">${msg.detail}</p>
       ${rootsList ? `<ul>${rootsList}</ul>` : ""}
     `;
@@ -177,18 +194,22 @@ document.getElementById("install-certs-btn").addEventListener("click", installCe
 
 const NSS_MESSAGES = {
   NoProfilesFound: {
+    status: "fail",
     headline: "No Firefox profiles found.",
     detail: "Firefox may not be installed, or profiles.ini wasn't where we expected.",
   },
   ModuleNotRegisteredAnywhere: {
+    status: "fail",
     headline: "Middleware not registered with Firefox.",
     detail: "Firefox has its own certificate database, separate from the OS. Your reader may work in other apps but not in Firefox until this is registered.",
   },
   PartiallyRegistered: {
+    status: "warning",
     headline: "Registered in some profiles, not others.",
     detail: "If you use multiple Firefox profiles, register in each one you need the CAC to work in.",
   },
   RegisteredInAllProfiles: {
+    status: "pass",
     headline: "Firefox is set up.",
     detail: "The middleware module is registered in every Firefox profile found. That's all four modules — reader, middleware, cert trust, and Firefox — checked.",
   },
@@ -212,7 +233,7 @@ async function checkNss() {
       .join("");
 
     statusEl.innerHTML = `
-      <p class="headline">${msg.headline}</p>
+      <p class="headline">${badge(msg.status)}${msg.headline}</p>
       <p class="detail">${msg.detail}</p>
       ${profileList ? `<ul>${profileList}</ul>` : ""}
     `;
