@@ -229,3 +229,29 @@ The Chrome Web Store fee is a small paid account beyond the two the doc allows. 
 - https://v2.tauri.app/distribute/sign/windows/
 - https://v2.tauri.app/distribute/sign/macos/
 - https://azure.microsoft.com/en-us/pricing/details/trusted-signing/
+
+---
+
+## ADR-007: Owner decisions from the design review (2026-10-29)
+
+**Status:** Accepted (owner)
+
+**Context.** A structured question-and-answer review of the plan with the owner. Each decision below names the earlier ADR or plan task it changes.
+
+| # | Decision | Changes |
+|---|---|---|
+| 1 | **"OS-native" means the OS sees the card's PIV Authentication certificate.** The app does not try to guess which certificate a given site needs. The guided flow ends with a "Try your CAC" step, and a failure there routes to middleware guidance | ADR-002 (narrows the definition of `OsNative`) |
+| 2 | "Try your CAC" uses a **known official DoD CAC-protected test page** | New P1.9, P5.4 |
+| 3 | The card check tries the **PIV applet, then the legacy CAC applet**. A card that answers only the CAC applet gets `CacWithoutPiv` (install middleware). A card that answers neither gets `CardNotCac` | P2.1, new P1.10 / VER-026 |
+| 4 | **Windows: no cert installer.** The app checks the stores and guides the user to DISA InstallRoot. `.p7b`/`.zip` parsing and installing is macOS-only | Supersedes ADR-004's Windows fallback installer. P2.4, P2.6 |
+| 5 | App identifier: **`io.github.tcjewelltech.cachelper`** (the hyphen in the username is dropped for bundle-ID safety) | P0.6 |
+| 6 | If no stable official test page exists, or it stops loading, the step falls back to **"Try the site you need"**. The app checks once per launch that the test page still loads | P5.4 |
+| 7 | The desktop app shows **"It worked" / "It failed"** buttons for the test. Once the extension is installed, it reports the result automatically | P5.4 |
+| 8 | The Windows trust check **reports** out-of-place certs (retired roots, cross-certs in `ROOT`, CurrentUser-only roots), with the fix "Run DISA InstallRoot". The app never removes certs | P2.3 |
+| 9 | The **hardware checks P1.5 (Windows + CAC) and P1.6 (Mac + CAC) run first**. Phase 2 waits for their results | Phase 1 order and exit criteria |
+| 10 | The owner approves the **$5 Chrome Web Store** fee | ADR-006, P4.6, VER-020 |
+
+**Consequences.**
+- On Windows, the app runs no elevated code for certificates at all. The VER-007 (UAC cancel) and VER-008 (`certutil` + `.p7b`) findings now matter only for the opt-in Firefox policy write (P3.5).
+- A third-party URL (the test page) becomes a runtime dependency, so it needs a health check and a fallback.
+- If P1.5/P1.6 refute OS-native support, Phase 2's middleware guidance grows and the plan is reviewed again before Phase 2.

@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 |---|---|---|
 | 0.1.1 | 0 | The scaffold compiles and runs on Windows and macOS (build and API-drift fixes only) |
 | 0.1.2 | 1 | Verified constants (DoD root thumbprints, DISA URL, middleware paths) |
-| 0.2.0 | 2 | Layered reader/middleware/trust outcomes, native file picker, `.p7b`/`.zip` parsing, scoped Root/CA install |
+| 0.2.0 | 2 | Layered reader/middleware/trust outcomes (PIV + legacy CAC card check), Windows check-and-guide to DISA InstallRoot, macOS native file picker with `.p7b`/`.zip` parsing and install |
 | 0.3.0 | 3 | Firefox diagnostic replaces `modutil` registration (**breaking:** `register_nss` removed) |
 | 0.4.0 | 4 | Browser extension + Native Messaging host |
 | 0.5.0 | 5 | Unified "Check everything" guided setup |

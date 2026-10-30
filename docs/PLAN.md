@@ -44,7 +44,7 @@ See the [`cargo check` log](#cargo-check-log) at the end of this file. Every err
 | P0.3 | Commit `Cargo.lock`, because this is an app and needs reproducible builds. Pin the toolchain with `rust-toolchain.toml`. The Windows check showed no API drift (see the log), so this task covers only fixes that come out of P0.7 on macOS | `Cargo.lock`, `rust-toolchain.toml` | `cargo check` is clean on both OSes | `cargo check` |
 | P0.4 | Set `app.withGlobalTauri: true`. Without it `window.__TAURI__` is undefined and every `invoke` fails | `tauri.conf.json` | The four cards show results, not "Error checking …" | `cargo tauri dev`, then a manual look |
 | P0.5 | Add a capabilities file `capabilities/default.json` with `core:default` (needed for Tauri v2 core APIs). Custom commands stay allowed | `src-tauri/capabilities/` | No permission errors in the devtools console | `cargo tauri dev` |
-| P0.6 | Change the identifier from `helper.cac.app` to one that doesn't end in `.app`, e.g. `io.github.<owner>.cachelper`. Decide this **before** the first signed release, because it changes app-data paths and the updater identity | `tauri.conf.json` | No bundler warning | `cargo tauri build --debug` |
+| P0.6 | Change the identifier from `helper.cac.app` to **`io.github.tcjewelltech.cachelper`** (decided 2026-10-29, ADR-007). It must be set before the first signed release, because it changes app-data paths and the updater identity | `tauri.conf.json` | No bundler warning | `cargo tauri build --debug` |
 | P0.7 | Make the macOS build run. Do a `cargo check` and a `cargo tauri dev` on the owner's Mac. The `cfg(macos)` code has never been compiled | — | Clean on aarch64-apple-darwin | 🔧 owner's Mac |
 | P0.8 | Add CI: GitHub Actions `cargo check` + `cargo clippy` on `windows-latest` and `macos-latest` | `.github/workflows/ci.yml` | A green run on push | GitHub Actions |
 
@@ -54,33 +54,39 @@ See the [`cargo check` log](#cargo-check-log) at the end of this file. Every err
 
 **Goal.** Close the register items that change design or code. This phase changes no product code. It only updates `VERIFICATION.md` statuses, plus hard-coded constants once they're verified.
 
+**Order (ADR-007):** run the hardware checks **P1.5 and P1.6 first**. Phase 2 does not start until both results are recorded, because the OS-native design rests on them. The rest of Phase 1 can run in any order.
+
 | ID | Task | Closes | Test / evidence |
 |---|---|---|---|
 | P1.1 | Get the current DISA PKCS#7 bundle in a browser. Record the version, its README list of roots, and the SHA-1/SHA-256 thumbprints of DoD Root CA 3/5/6. Update `KNOWN_DOD_ROOTS` to thumbprints and drop Root CA 4 | VER-001, VER-002 | Bundle README + `certutil -dump` output pasted into the register |
 | P1.2 | Install OpenSC (current release) in a Windows VM and a macOS VM. Record the real PKCS#11 paths, and those of the other vendors where their docs publish them | VER-003 | Paths + doc links |
 | P1.3 | Reproduce UAC cancel behaviour. Record the exit code and stderr of the `Start-Process -Verb RunAs` path | VER-007 | Transcript |
 | P1.4 | 🔧 Mac: run `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain test.cer` **as the user** with a throwaway self-signed CA. Confirm the auth dialog appears and trust is set. Then remove it with `security remove-trusted-cert -d` | VER-021, VER-005 | Screenshot + `security dump-trust-settings -d` |
-| P1.5 | 🔧 Clean Windows 11 + CAC: `certutil -scinfo`, list the certs exposed by the inbox minidriver, and try a CAC login in Edge and Firefox | VER-011 | Transcript + result |
-| P1.6 | 🔧 Mac + CAC: `sc_auth identities`, `security list-smartcards`, and a login in Safari, Chrome and Firefox | VER-010 | Transcript + result |
+| P1.5 | 🔧 **First.** Clean Windows 11 + CAC: `certutil -scinfo`, list the certs exposed by the inbox minidriver (is the PIV Authentication cert there?), and try a CAC login in Edge and Firefox | VER-011 | Transcript + result |
+| P1.6 | 🔧 **First.** Mac + CAC: `sc_auth identities`, `security list-smartcards`, and a login in Safari, Chrome and Firefox | VER-010 | Transcript + result |
 | P1.7 | In a Windows VM, run DISA InstallRoot 5.6 and diff the stores (`ROOT`, `CA`, `Disallowed`) before and after | VER-012 | Diff |
 | P1.8 | Confirm the Firefox 120 enterprise-roots default from the release notes or pref history. Confirm the Edge NMH paths, the MV3 SW + `sendNativeMessage` behaviour, and Tauri's universal macOS target | VER-014/015/016/018 | Links |
+| P1.9 | Find a stable, official DoD CAC-protected test page for the "Try your CAC" step (ADR-007). Record its URL, who publishes it, and what a pass looks like | VER-017 | Link + a manual pass with a CAC 🔧 |
+| P1.10 | Confirm the legacy CAC applet AIDs (candidates: CCC `A0 00 00 01 16 DB 00`, PKI applets `A0 00 00 00 79 01 0x`) against GSC-IS 2.1 / NIST IR 6887, and test that a real CAC answers them | VER-026 | Spec citation + APDU transcript 🔧 |
 
-**Exit criteria.** None of VER-001/002/003/007/010/011/012/021 is still `open`. If VER-021 is refuted, Phase 2 uses the Keychain Access hand-off fallback (ADR-004a).
+**Exit criteria.** P1.5 and P1.6 are recorded before Phase 2 starts. None of VER-001/002/003/007/010/011/012/021 is still `open`. If VER-021 is refuted, Phase 2 uses the Keychain Access hand-off fallback (ADR-004a).
 
 ---
 
 ## Phase 2: Harden modules 1–3 (→ 0.2.0)
 
-**Goal.** Each check reports the layer that is broken. Cert install takes a picked `.p7b`/`.zip`, previews it, and installs each certificate into the right store with one elevation per batch.
+**Goal.** Each check reports the layer that is broken.
+- **Windows** is check-and-guide only: the app verifies the stores and sends the user to DISA InstallRoot (ADR-007).
+- **macOS** cert install takes a picked `.p7b`/`.zip`, previews it, and installs each certificate with one authorization per batch.
 
 | ID | Task | Files | Acceptance | Test |
 |---|---|---|---|---|
-| P2.1 | Reader: add `PcscServiceUnavailable` (from `Error::NoService` / `ServiceStopped`). Use `list_readers_len` + owned buffer instead of a fixed 2048 bytes. Ignore the `\\?PnP?\Notification` pseudo-reader. **Fix the false positive found in Phase 0:** this dev PC's built-in cellular SIM reader ("Microsoft UICC ISO Reader") makes the app report "Card readable" with no CAC inserted (VER-025). Exclude UICC readers by name, and only report `CardPresent` after connecting and getting a successful SELECT of the PIV AID (`A0 00 00 03 08`). Otherwise report the new outcome `CardNotCac` | `reader.rs`, `main.js` | Stopping `SCardSvr` on Windows shows the service message. A PC with only a SIM reader reports `NoReaderFound` | Unit tests on outcome mapping (a fake state list) and the reader-name filter, plus manual service stop and a run on this dev PC |
+| P2.1 | Reader: add `PcscServiceUnavailable` (from `Error::NoService` / `ServiceStopped`). Use `list_readers_len` + owned buffer instead of a fixed 2048 bytes. Ignore the `\\?PnP?\Notification` pseudo-reader. **Fix the false positive found in Phase 0:** this dev PC's built-in cellular SIM reader ("Microsoft UICC ISO Reader") makes the app report "Card readable" with no CAC inserted (VER-025). Exclude UICC readers by name, and only report `CardPresent` after connecting and getting a successful SELECT of the PIV AID (`A0 00 00 03 08`). If PIV fails, try the legacy CAC applet (AIDs from P1.10). A card that answers only the CAC applet reports the new outcome `CacWithoutPiv` ("your card works but your OS can't use it natively: install middleware"). A card that answers neither reports `CardNotCac` (ADR-007) | `reader.rs`, `main.js` | Stopping `SCardSvr` on Windows shows the service message. A PC with only a SIM reader reports `NoReaderFound` | Unit tests on outcome mapping (a fake state list) and the reader-name filter, plus manual service stop and a run on this dev PC |
 | P2.2 | Middleware: the new outcome model from ADR-002 (`OsNative`, `ThirdPartyValid`, `ThirdPartyInvalid{reason}`, `NothingUsable`). Read the PE/Mach-O header to report `ArchMismatch` before loading. Add OS-native card cert enumeration | `middleware.rs`, `main.js` | A clean Windows 11 + CAC shows `OsNative` | Unit tests for header parsing (fixture DLL/dylib headers). 🔧 for the card path |
-| P2.3 | Trust check by thumbprint, covering LocalMachine (and, separately, CurrentUser) `ROOT`/`CA` on Windows and the System keychain plus admin trust settings on macOS. Report expired roots | `cert_store.rs` | `Installed` after InstallRoot in a VM | Unit tests with mocked store listings, plus a VM |
-| P2.4 | Bundle parsing with the `cms` + `x509-cert` crates (and `zip`). Return a preview list (subject, issuer, kind, SHA-256, notAfter). Classify root/intermediate/cross-cert | new `src-tauri/src/pki_bundle.rs`, `Cargo.toml` | Parses the real DISA bundle. Counts match `certutil -dump` | Unit tests with a checked-in **synthetic** test bundle. Don't commit DoD certs |
+| P2.3 | Trust check by thumbprint, covering LocalMachine (and, separately, CurrentUser) `ROOT`/`CA` on Windows and the System keychain plus admin trust settings on macOS. Report expired roots. On Windows, also **report** out-of-place certs: retired roots such as Root CA 4, interoperability cross-certs in `ROOT`, or DoD roots only in CurrentUser. The fix shown is "Run DISA InstallRoot". The app never removes certs (ADR-007) | `cert_store.rs` | `Installed` after InstallRoot in a VM. Planted out-of-place certs are listed | Unit tests with mocked store listings, plus a VM |
+| P2.4 | **macOS only.** Bundle parsing with the `cms` + `x509-cert` crates (and `zip`). Return a preview list (subject, issuer, kind, SHA-256, notAfter). Classify root/intermediate/cross-cert | new `src-tauri/src/pki_bundle.rs`, `Cargo.toml` | Parses the real DISA bundle. Counts match `certutil -dump` | Unit tests with a checked-in **synthetic** test bundle. Don't commit DoD certs |
 | P2.5 | Native file picker with `tauri-plugin-dialog` (`.p7b`, `.cer`, `.crt`, `.zip`). Remove the typed-path input | `Cargo.toml`, `lib.rs`, `capabilities/default.json`, `index.html`, `main.js` | The user picks a file. The preview shows before the confirmation | Manual |
-| P2.6 | Windows install: write the selected certs to temp `.cer` files, then make **one** elevated PowerShell call that runs `certutil -addstore -f ROOT` / `CA` per cert. Map a UAC cancel to the result of P1.3. Delete the temp files | `cert_store.rs` | Roots in ROOT, intermediates in CA. Cancel shows "canceled" | VM: verify the stores before and after |
+| P2.6 | Windows: **remove** the scaffold's `install_one` (certutil + UAC) and the install UI. Replace it with an "Open DISA InstallRoot page" button and a re-check after the user runs it (ADR-007) | `cert_store.rs`, `lib.rs`, `index.html`, `main.js` | No elevation code is left on Windows. Re-check after InstallRoot shows `Installed` | VM: run InstallRoot, then re-check |
 | P2.7 | macOS install per ADR-004a: argv-based, unprivileged `security`. Remove `shell_single_quote`/`applescript_escape`. Use the fallback if P1.4 failed | `cert_store.rs` | Trust shows in `security dump-trust-settings -d` | 🔧 Mac |
 | P2.8 | Make the mutating and blocking commands `async` (`install_certs`, later the Firefox policy write) so UAC/auth waits don't freeze the UI | `lib.rs` | The UI stays responsive during the prompt | Manual |
 | P2.9 | Frontend safety: replace `innerHTML` with DOM building/`textContent` (reader names, paths and stderr are untrusted). Set a strict CSP (`default-src 'self'`). Fix the disclaimer, which wrongly says the app fetches certs | `main.js`, `index.html`, `tauri.conf.json` | No `innerHTML` with dynamic data. CSP is active | grep + manual |
@@ -113,7 +119,7 @@ See the [`cargo check` log](#cargo-check-log) at the end of this file. Every err
 | P4.3 | Extension (one source, MV3): Chrome `service_worker`, Firefox `background.scripts` + `browser_specific_settings.gecko.id`. Popup shows the layer status | new `extension/` | Loads unpacked in Chrome and Firefox | Manual + web-ext lint |
 | P4.4 | "App not installed" path: detect the `lastError`, show an install page that links to GitHub Releases, and run browser-only checks | `extension/` | Works with the app uninstalled | Manual |
 | P4.5 | `open_app` via a `cachelper://` deep link (`tauri-plugin-deep-link`) for mutating fixes, so all changes happen in the app with confirmation | `lib.rs`, `extension/` | The extension can't mutate anything directly | Code review + manual |
-| P4.6 | Store listings. **Ask the owner first**: the Chrome Web Store fee is a paid account (VER-020) | — | Owner decision recorded | — |
+| P4.6 | Store listings: Chrome Web Store (owner approved the $5 one-time fee on 2026-10-29, ADR-007) and Firefox AMO | — | Both listings live | — |
 
 ---
 
@@ -125,6 +131,7 @@ See the [`cargo check` log](#cargo-check-log) at the end of this file. Every err
 |---|---|---|---|---|
 | P5.1 | `check_all` command returning ordered layer results (shared with the NMH) | `lib.rs` | One call returns every layer | Unit test with mocked layers |
 | P5.2 | Stepper UI: layer list, first failure expanded, plain-English fix, a "Re-check" per step. "Not endorsed by DoD" on every screen | `index.html`, `main.js`, `styles.css` | Keyboard-accessible, readable at 480 px | Manual + axe check |
+| P5.4 | Final step "Try your CAC" (ADR-007). The app opens the official DoD test page from P1.9 in the user's browser and shows "It worked" / "It failed" buttons. "It failed" routes to the middleware guidance. The app checks once per launch that the test page still loads, and falls back to "Try the site you need" if it doesn't or if P1.9 found none. When the extension is installed, it reports the result and the buttons are skipped | `lib.rs`, `main.js`, `index.html` | Both the test-page path and the fallback path work | Manual, with the test URL unreachable to exercise the fallback |
 | P5.3 | Copyable diagnostic report (no PII: drop the cert subject DN and keep only the issuer and expiry) for support | `lib.rs`, `main.js` | Report copies to the clipboard | Manual |
 
 ---
@@ -159,7 +166,7 @@ See the [`cargo check` log](#cargo-check-log) at the end of this file. Every err
 1. **The Windows inbox driver may not expose the certificate DoD sites need** (VER-011). That would make third-party middleware (ActivClient is licensed and not freely available) necessary for some users. Mitigation: OpenSC guidance, and an honest "needs middleware" state.
 2. **macOS admin-domain trust changes may still be refused** without MDM on newer macOS (VER-021). Mitigation: the Keychain Access hand-off fallback.
 3. **Losing the updater signing key** strands every installed user. Mitigation: an offline backup step in P6.4.
-4. **Wrong trust scope**: roots, intermediates or cross-certs in the wrong store (VER-012) undermine trust or break chains. Mitigation: Rust-side classification, the preview, and an InstallRoot diff in P1.7.
+4. **Wrong trust scope**: roots, intermediates or cross-certs in the wrong store (VER-012) undermine trust or break chains. Mitigation: on Windows the app no longer installs anything (InstallRoot does). On macOS, Rust-side classification and the preview. The P1.7 InstallRoot diff informs the Windows check.
 5. **The scaffold has never compiled** and macOS code is unchecked. API drift could be wider than the Windows log shows. Mitigation: P0.7 on the owner's Mac and CI on `macos-latest`.
 
 ## Hardware-only verification items (owner)
