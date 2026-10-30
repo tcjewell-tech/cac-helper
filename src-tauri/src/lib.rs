@@ -44,6 +44,17 @@ fn check_nss(module_path: String) -> NssCheckResult {
 /// firefox_nss::register_module doc comment.
 #[tauri::command]
 fn register_nss(profile_paths: Vec<String>, module_name: String, module_path: String) -> RegisterReport {
+    // Only register the module this app itself validated; never a path the
+    // webview made up (an injected script could otherwise pick any DLL).
+    if middleware::detect_middleware().valid_path.as_deref() != Some(module_path.as_str()) {
+        return RegisterReport {
+            succeeded: Vec::new(),
+            failed: profile_paths
+                .into_iter()
+                .map(|p| (p, "module path is not the validated middleware module".to_string()))
+                .collect(),
+        };
+    }
     firefox_nss::register_module(profile_paths, &module_name, &module_path)
 }
 

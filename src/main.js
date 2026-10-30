@@ -7,6 +7,17 @@ function badge(status) {
   return status ? `<span class="badge ${status}" aria-hidden="true">${BADGE_GLYPHS[status]}</span>` : "";
 }
 
+// Backend strings (reader names, profile names, paths, tool stderr) are
+// untrusted: escape them before they go into innerHTML.
+function esc(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 const MESSAGES = {
   NoReaderFound: {
     status: "fail",
@@ -23,10 +34,11 @@ const MESSAGES = {
     headline: "Card detected but unreadable.",
     detail: "This usually means middleware is missing or the card is seated wrong. Try reseating the card, then re-check.",
   },
+  // Warning, not pass, until P2.1: a built-in SIM reader also reports a card (VER-025).
   CardPresent: {
-    status: "pass",
-    headline: "Card readable.",
-    detail: "The reader and card are working at the hardware level. Next: confirm DoD certs are trusted and Firefox can see the card.",
+    status: "warning",
+    headline: "A card is responding.",
+    detail: "The reader sees a card, but this check can't yet confirm it's your CAC — some laptops' built-in SIM readers show up here too. Check that your CAC is in the reader listed below. Next: confirm DoD certs are trusted and Firefox can see the card.",
   },
 };
 
@@ -39,7 +51,7 @@ async function checkReader() {
     const msg = MESSAGES[result.outcome] || { headline: "Unknown state", detail: "" };
 
     const readerList = result.readers
-      .map((r) => `<li>${r.name}: ${r.card_present ? "card present" : "no card"}</li>`)
+      .map((r) => `<li>${esc(r.name)}: ${r.card_present ? "card present" : "no card"}</li>`)
       .join("");
 
     statusEl.innerHTML = `
@@ -85,7 +97,7 @@ async function checkMiddleware() {
     lastMiddlewareName = result.found.length > 0 ? result.found[0].name : null;
 
     const foundList = result.found
-      .map((c) => `<li>${c.name} <span class="path">(${c.path})</span></li>`)
+      .map((c) => `<li>${esc(c.name)} <span class="path">(${esc(c.path)})</span></li>`)
       .join("");
 
     statusEl.innerHTML = `
@@ -134,7 +146,7 @@ async function checkTrust() {
   try {
     const result = await invoke("check_trust");
     const msg = TRUST_MESSAGES[result.outcome] || { headline: "Unknown state", detail: "" };
-    const rootsList = result.roots_found.map((r) => `<li>${r}</li>`).join("");
+    const rootsList = result.roots_found.map((r) => `<li>${esc(r)}</li>`).join("");
 
     statusEl.innerHTML = `
       <p class="headline">${badge(msg.status)}${msg.headline}</p>
@@ -175,8 +187,8 @@ async function installCerts() {
 
   try {
     const report = await invoke("install_certs", { paths });
-    const succeeded = report.succeeded.map((p) => `<li>${p}</li>`).join("");
-    const failed = report.failed.map(([p, err]) => `<li>${p}: ${err}</li>`).join("");
+    const succeeded = report.succeeded.map((p) => `<li>${esc(p)}</li>`).join("");
+    const failed = report.failed.map(([p, err]) => `<li>${esc(p)}: ${esc(err)}</li>`).join("");
 
     statusEl.innerHTML = `
       ${succeeded ? `<p class="headline">Installed:</p><ul>${succeeded}</ul>` : ""}
@@ -229,7 +241,7 @@ async function checkNss() {
     const result = await invoke("check_nss", { modulePath: lastMiddlewarePath });
     const msg = NSS_MESSAGES[result.outcome] || { headline: "Unknown state", detail: "" };
     const profileList = result.profiles
-      .map((p) => `<li>${p.name}: ${p.module_registered ? "registered" : "not registered"}</li>`)
+      .map((p) => `<li>${esc(p.name)}: ${p.module_registered ? "registered" : "not registered"}</li>`)
       .join("");
 
     statusEl.innerHTML = `
@@ -267,8 +279,8 @@ async function registerNss() {
       modulePath: lastMiddlewarePath,
     });
 
-    const succeeded = report.succeeded.map((p) => `<li>${p}</li>`).join("");
-    const failed = report.failed.map(([p, err]) => `<li>${p}: ${err}</li>`).join("");
+    const succeeded = report.succeeded.map((p) => `<li>${esc(p)}</li>`).join("");
+    const failed = report.failed.map(([p, err]) => `<li>${esc(p)}: ${esc(err)}</li>`).join("");
 
     statusEl.innerHTML = `
       ${succeeded ? `<p class="headline">Registered:</p><ul>${succeeded}</ul>` : ""}
