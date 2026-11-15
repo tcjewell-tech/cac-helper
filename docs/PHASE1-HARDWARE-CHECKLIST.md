@@ -47,6 +47,16 @@ If C prints nothing, tell me. Keep the Desktop file for now in case I need one m
 3. Did the login work? If not, what was the error text?
 4. Did the site show a "not secure" or certificate warning before the login? (That means the DoD root certificates aren't installed yet. If so, run DISA InstallRoot from <https://www.cyber.mil/pki-pke/tools-configuration-files/>, try again, and tell me you did.)
 
+**E. If you ran InstallRoot** (now or at any time on this PC), tell me how it went. This matters: a test run of InstallRoot 5.6 on a blank Windows machine refused to install anything.
+
+1. Which download did you use (64-bit, or "Non-Administrator")?
+2. Did it open and install the certificates without an error? If there was an error, what did it say? A photo of the screen is fine.
+3. Then run this and paste the output. It lists DoD certificates by store, with no personal data:
+
+```powershell
+foreach ($s in 'LocalMachine\Root','LocalMachine\CA','LocalMachine\Disallowed','CurrentUser\Root','CurrentUser\CA','CurrentUser\Disallowed') { Get-ChildItem "Cert:\$s" | Where-Object { $_.Subject -match 'DoD|U.S. Government' -or $_.Issuer -match 'DoD|U.S. Government' } | ForEach-Object { "{0} | {1} | {2} | issued by {3}" -f $s, $_.Thumbprint, ($_.Subject -replace ',.*'), ($_.Issuer -replace ',.*') } }
+```
+
 ---
 
 ## Step 2: Mac + CAC (P1.6) — do this first too
