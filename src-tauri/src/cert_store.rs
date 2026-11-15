@@ -1,21 +1,22 @@
 use serde::Serialize;
 use std::process::Command;
 
-/// Well-known DoD PKI root CA common names to check for in the OS trust
-/// store. VERIFY THIS LIST against current DISA PKI/PKE documentation
-/// before shipping -- DoD periodically issues new root CAs and retires
-/// old ones, and this scaffold was written from memory, not a live source.
-const KNOWN_DOD_ROOTS: &[&str] = &[
-    "DoD Root CA 3",
-    "DoD Root CA 4",
-    "DoD Root CA 5",
-    "DoD Root CA 6",
+/// Required DoD root CAs as (common name, SHA-1 thumbprint in lowercase hex).
+/// Verified 2026-11-15 against the signed DISA bundle "PKCS#7 for DoD PKI
+/// Only" v5.14 (VER-001 in docs/VERIFICATION.md, which also has the SHA-256
+/// values and expiry dates). Root CA 4 is still in that bundle but has no
+/// subordinate CAs and the Windows 11 STIG doesn't list it, so it is not
+/// required here. Re-verify whenever DISA publishes a new bundle version.
+const KNOWN_DOD_ROOTS: &[(&str, &str)] = &[
+    ("DoD Root CA 3", "d73ca91102a2204a36459ed32213b467d7ce97fb"),
+    ("DoD Root CA 5", "4ecb5cc3095670454da1cbd410fc921f46b8564b"),
+    ("DoD Root CA 6", "d37ecf61c0b4ed88681ef3630c4e2fc787b37aef"),
 ];
 
-/// Official DISA page listing current DoD PKI cert bundles and installers.
-/// VERIFY THIS URL before shipping -- DISA reorganizes these pages
-/// periodically and a stale link is worse than no link.
-pub const DOD_CERT_PAGE_URL: &str = "https://public.cyber.mil/pki-pke/tools-configuration-files/";
+/// Official DISA page listing current DoD PKI cert bundles and InstallRoot.
+/// Verified 2026-11-15 (VER-002). DISA reorganizes these pages
+/// periodically, so re-check before each release.
+pub const DOD_CERT_PAGE_URL: &str = "https://www.cyber.mil/pki-pke/tools-configuration-files/";
 
 #[derive(Serialize, Clone, Debug)]
 pub enum TrustOutcome {
@@ -35,37 +36,40 @@ pub struct TrustCheckResult {
 }
 
 #[cfg(target_os = "windows")]
-fn root_present(cn: &str) -> bool {
-    // `certutil -store Root` dumps the Windows Root store; grep for the CN.
+fn root_present(_cn: &str, sha1: &str) -> bool {
+    // `certutil -store Root` dumps the LocalMachine Root store with a
+    // "Cert Hash(sha1): <lowercase hex>" line per cert; look for the hash.
     // This only checks presence, not trust flags/expiry -- good enough for
     // a first-pass diagnostic, not a substitute for full chain validation.
+    // shortcut: text match on certutil output, LocalMachine only; P2.3
+    // replaces this with a proper store lookup.
     match Command::new("certutil").args(["-store", "Root"]).output() {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).contains(cn),
+        Ok(out) => String::from_utf8_lossy(&out.stdout).to_lowercase().contains(sha1),
         Err(_) => false,
     }
 }
 
 #[cfg(target_os = "macos")]
-fn root_present(cn: &str) -> bool {
-    // Checks the System keychain, which is where InstallRoot / manual
-    // "System" trust installs land. Exit status 0 = found.
+fn root_present(cn: &str, sha1: &str) -> bool {
+    // Checks the System keychain, which is where manual "System" trust
+    // installs land. `-Z` prints a "SHA-1 hash: <HEX>" line per match.
     Command::new("security")
-        .args(["find-certificate", "-c", cn, "/Library/Keychains/System.keychain"])
+        .args(["find-certificate", "-a", "-c", cn, "-Z", "/Library/Keychains/System.keychain"])
         .output()
-        .map(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).to_lowercase().contains(sha1))
         .unwrap_or(false)
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-fn root_present(_cn: &str) -> bool {
+fn root_present(_cn: &str, _sha1: &str) -> bool {
     false
 }
 
 pub fn check_trust_status() -> TrustCheckResult {
     let roots_found: Vec<String> = KNOWN_DOD_ROOTS
         .iter()
-        .filter(|cn| root_present(cn))
-        .map(|cn| cn.to_string())
+        .filter(|(cn, sha1)| root_present(cn, sha1))
+        .map(|(cn, _)| cn.to_string())
         .collect();
 
     let outcome = if roots_found.is_empty() {
