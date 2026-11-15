@@ -85,12 +85,26 @@ jobs:
             if (-not $p.WaitForExit(120000)) { $p.Kill(); "TIMED OUT (probably opened a window)" } else { "exit code: $($p.ExitCode)" }
             Get-Content o.txt, e.txt -ErrorAction SilentlyContinue | Select-Object -First 80
           }
-          foreach ($e in $exe) {
-            Try-Run $e '--help'
-            Try-Run $e '--insert'
-          }
+          # Run 1 finding: the TAMP message shipped in the 5.6 MSI fails signature
+          # verification, so fetch the current one first (--update).
+          $ir = "$env:ProgramFiles\DoD-PKE\InstallRoot\InstallRoot.exe"
+          Try-Run $ir '--update'
+          Try-Run $ir '--liststores'
+          Try-Run $ir '--list --group DoD'
+          Try-Run $ir '--insert --group DoD --store MSCAPI_LC'
           ./snap.ps1 after-cli
           ./diff.ps1 after-msi after-cli
+          # InstallRoot's own classification, whether or not the insert worked.
+          foreach ($sub in 'ROOT','INTERMEDIATE','UNTRUSTED') {
+            Try-Run $ir "--export out\export-$sub.p7b --exportformat PKCS7 --exportsublocation $sub --group DoD"
+            if (Test-Path "out\export-$sub.p7b") {
+              $c = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+              $c.Import((Resolve-Path "out\export-$sub.p7b").Path)
+              "== $sub : $($c.Count) certs"
+              $c | Sort-Object Subject | ForEach-Object { "{0}  {1}  <- {2}" -f $_.Thumbprint, $_.Subject, $_.Issuer }
+            }
+          }
+          Copy-Item "$env:ProgramFiles\DoD-PKE\InstallRoot\service\logs\*" out\ -ErrorAction SilentlyContinue
 
       - name: Upload evidence
         if: always()
