@@ -1,0 +1,114 @@
+# P1.7 / VER-012: what does DISA InstallRoot 5.6 put in which Windows store?
+# Runs on a throwaway GitHub Windows machine, so no real PC is changed.
+# Evidence only. Safe to delete once VER-012 is closed.
+name: P1.7 InstallRoot store diff
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/p1-7-installroot-diff.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Snapshot helper
+        run: |
+          @'
+          param([string]$Name)
+          $stores = 'Root','CA','Disallowed','AuthRoot','TrustedPublisher'
+          $rows = foreach ($loc in 'LocalMachine','CurrentUser') {
+            foreach ($s in $stores) {
+              Get-ChildItem "Cert:\$loc\$s" -ErrorAction SilentlyContinue | ForEach-Object {
+                [pscustomobject]@{ Location=$loc; Store=$s; Thumbprint=$_.Thumbprint; NotAfter=$_.NotAfter.ToString('yyyy-MM-dd'); SelfSigned=($_.Subject -eq $_.Issuer); Subject=$_.Subject; Issuer=$_.Issuer }
+              }
+            }
+          }
+          New-Item -ItemType Directory -Force out | Out-Null
+          $rows | Sort-Object Location,Store,Thumbprint | Export-Csv "out\$Name.csv" -NoTypeInformation
+          "{0}: {1} certs" -f $Name, @($rows).Count
+          '@ | Set-Content snap.ps1
+          @'
+          param([string]$From, [string]$To)
+          $key = { "$($_.Location)|$($_.Store)|$($_.Thumbprint)" }
+          $a = Import-Csv "out\$From.csv"; $b = Import-Csv "out\$To.csv"
+          $have = @{}; $a | ForEach-Object { $have[(& $key)] = 1 }
+          $now  = @{}; $b | ForEach-Object { $now[(& $key)] = 1 }
+          $added   = @($b | Where-Object { -not $have[(& $key)] })
+          $removed = @($a | Where-Object { -not $now[(& $key)] })
+          $added   | Export-Csv "out\added-$From-to-$To.csv" -NoTypeInformation
+          $removed | Export-Csv "out\removed-$From-to-$To.csv" -NoTypeInformation
+          "## $From -> $To : $($added.Count) added, $($removed.Count) removed"
+          $added | Group-Object Location,Store,SelfSigned | Sort-Object Name | ForEach-Object { "  added {0,4}  {1}" -f $_.Count, $_.Name }
+          $added | Sort-Object Location,Store,Subject | Format-Table Location,Store,SelfSigned,NotAfter,Thumbprint,Subject -AutoSize | Out-String -Width 300
+          $removed | Format-Table Location,Store,Thumbprint,Subject -AutoSize | Out-String -Width 300
+          '@ | Set-Content diff.ps1
+
+      - name: Machine info and "before" snapshot
+        run: |
+          (Get-CimInstance Win32_OperatingSystem) | Format-List Caption, Version, OSArchitecture
+          ./snap.ps1 before
+
+      - name: Download InstallRoot 5.6 from DISA and check its signature
+        run: |
+          $url = 'https://dl.dod.cyber.mil/wp-content/uploads/pki-pke/msi/InstallRoot_5.6x64.msi'
+          Invoke-WebRequest $url -OutFile InstallRoot.msi
+          Get-Item InstallRoot.msi | Format-List Name, Length
+          (Get-FileHash InstallRoot.msi -Algorithm SHA256).Hash
+          $sig = Get-AuthenticodeSignature InstallRoot.msi
+          $sig | Format-List Status, StatusMessage
+          $sig.SignerCertificate | Format-List Subject, Issuer, Thumbprint, NotAfter
+
+      - name: Install the MSI silently
+        run: |
+          $p = Start-Process msiexec -ArgumentList '/i','InstallRoot.msi','/qn','/norestart','/l*v','out\msi.log' -Wait -PassThru
+          "msiexec exit code: $($p.ExitCode)"
+          Get-ChildItem "$env:ProgramFiles\DoD-PKE","${env:ProgramFiles(x86)}\DoD-PKE" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+          ./snap.ps1 after-msi
+          ./diff.ps1 before after-msi
+
+      - name: Try InstallRoot's own command line
+        run: |
+          $exe = Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}" -Recurse -Filter 'InstallRoot*.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+          "found: $($exe -join '; ')"
+          function Try-Run($file, $argList) {
+            "---- $file $argList"
+            $p = Start-Process $file -ArgumentList $argList -PassThru -RedirectStandardOutput o.txt -RedirectStandardError e.txt
+            if (-not $p.WaitForExit(120000)) { $p.Kill(); "TIMED OUT (probably opened a window)" } else { "exit code: $($p.ExitCode)" }
+            Get-Content o.txt, e.txt -ErrorAction SilentlyContinue | Select-Object -First 80
+          }
+          # Run 1 finding: the TAMP message shipped in the 5.6 MSI fails signature
+          # verification, so fetch the current one first (--update).
+          $ir = "$env:ProgramFiles\DoD-PKE\InstallRoot\InstallRoot.exe"
+          Try-Run $ir '--update'
+          Try-Run $ir '--liststores'
+          Try-Run $ir '--list --group DoD'
+          Try-Run $ir '--insert --group DoD --store MSCAPI_LC'
+          ./snap.ps1 after-cli
+          ./diff.ps1 after-msi after-cli
+          # InstallRoot's own classification, whether or not the insert worked.
+          foreach ($sub in 'ROOT','INTERMEDIATE','UNTRUSTED') {
+            Try-Run $ir "--export out\export-$sub.p7b --exportformat PKCS7 --exportsublocation $sub --group DoD"
+            if (Test-Path "out\export-$sub.p7b") {
+              $c = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+              $c.Import((Resolve-Path "out\export-$sub.p7b").Path)
+              "== $sub : $($c.Count) certs"
+              $c | Sort-Object Subject | ForEach-Object { "{0}  {1}  <- {2}" -f $_.Thumbprint, $_.Subject, $_.Issuer }
+            }
+          }
+          Copy-Item "$env:ProgramFiles\DoD-PKE\InstallRoot\service\logs\*" out\ -ErrorAction SilentlyContinue
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-7-installroot-diff
+          path: out/
