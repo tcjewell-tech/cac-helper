@@ -11,14 +11,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - Planning docs: `docs/PLAN.md`, `docs/VERIFICATION.md`, `docs/DECISIONS.md`, `docs/TEST-MATRIX.md`.
-- Pass / warning / fail status badges before each status headline (`.badge`, `badge()` in `src/main.js`).
+- Pass / warning / fail status badges before each status headline (`.badge`, built in `showResult()` in `src/main.js`).
+- CI (`.github/workflows/ci.yml`): `cargo test` on Windows and macOS, plus a check that the UI has no `innerHTML` (P2.10).
+- Unit tests for the reader outcome mapping and the `profiles.ini` parser, now pure functions (`outcome_for`, `parse_profiles_ini`) (P2.10).
 
 ### Security
-- Escape backend strings (reader and profile names, paths, tool errors) before rendering, so a crafted device or profile name can't inject script that calls Tauri commands.
+- The UI is built from DOM nodes and `textContent` instead of `innerHTML`, so backend strings (reader and profile names, paths, tool errors) can never become markup (P2.9). This replaces the earlier escaping.
 - Strict Content Security Policy instead of none.
 - `register_nss` refuses any module path other than the one `detect_middleware` validated.
 
 ### Fixed
+- The disclaimer no longer says the app fetches certs and drivers. It doesn't; it points to DISA and vendor sources (P2.9).
 - `CardPresent` shows a warning badge and "A card is responding." instead of "Card readable." until P2.1 can tell a CAC from a SIM reader (VER-025).
 - Hint and path text contrast: `#888` → `#767676` (4.54:1 on white).
 - Button and input border contrast: `#ccc` → `#8f8f8f` (3.2:1 on white).

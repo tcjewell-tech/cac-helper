@@ -75,38 +75,53 @@ pub fn detect_readers() -> Result<DetectionResult, Box<dyn std::error::Error>> {
     ctx.get_status_change(std::time::Duration::from_millis(0), &mut reader_states)
         .or_else(|e| if e == Error::Timeout { Ok(()) } else { Err(e) })?;
 
-    let mut statuses = Vec::new();
-    let mut any_card_present = false;
-    let mut any_card_unreadable = false;
-
-    for rs in &reader_states {
-        let event_state = rs.event_state();
-        let card_present = event_state.contains(State::PRESENT);
-        let mute = event_state.contains(State::MUTE);
-
-        if card_present && mute {
-            any_card_unreadable = true;
-        } else if card_present {
-            any_card_present = true;
-        }
-
-        statuses.push(ReaderStatus {
+    let states: Vec<State> = reader_states.iter().map(|rs| rs.event_state()).collect();
+    let statuses = reader_states
+        .iter()
+        .zip(&states)
+        .map(|(rs, s)| ReaderStatus {
             name: rs.name().to_string_lossy().into_owned(),
-            card_present,
-            state_flags: format!("{:?}", event_state),
-        });
-    }
+            card_present: s.contains(State::PRESENT),
+            state_flags: format!("{:?}", s),
+        })
+        .collect();
 
-    let outcome = if any_card_present {
+    Ok(DetectionResult {
+        outcome: outcome_for(&states),
+        readers: statuses,
+    })
+}
+
+/// One readable card anywhere wins; otherwise a mute (present but
+/// unreadable) card; otherwise readers with no card.
+fn outcome_for(states: &[State]) -> DetectionOutcome {
+    let present = |s: &&State| s.contains(State::PRESENT);
+    if states.iter().filter(present).any(|s| !s.contains(State::MUTE)) {
         DetectionOutcome::CardPresent
-    } else if any_card_unreadable {
+    } else if states.iter().any(|s| present(&s)) {
         DetectionOutcome::CardUnreadable
     } else {
         DetectionOutcome::ReaderReadyNoCard
-    };
+    }
+}
 
-    Ok(DetectionResult {
-        outcome,
-        readers: statuses,
-    })
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outcome(states: &[State]) -> String {
+        format!("{:?}", outcome_for(states))
+    }
+
+    #[test]
+    fn maps_reader_states_to_outcome() {
+        let mute = State::PRESENT | State::MUTE;
+        assert_eq!(outcome(&[State::EMPTY]), "ReaderReadyNoCard");
+        assert_eq!(outcome(&[State::PRESENT]), "CardPresent");
+        assert_eq!(outcome(&[mute]), "CardUnreadable");
+        // A readable card in any reader beats a mute one in another.
+        assert_eq!(outcome(&[mute, State::PRESENT]), "CardPresent");
+        // MUTE without PRESENT is not a card.
+        assert_eq!(outcome(&[State::MUTE]), "ReaderReadyNoCard");
+    }
 }
