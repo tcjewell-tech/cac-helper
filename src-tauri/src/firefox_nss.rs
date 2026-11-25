@@ -59,11 +59,13 @@ fn firefox_root_dir() -> Option<PathBuf> {
 /// Minimal profiles.ini parser -- just enough to pull Name/Path/IsRelative
 /// out of each [Profile*] section. Not a general INI parser.
 fn parse_profile_paths(root: &Path) -> Vec<(String, PathBuf)> {
-    let content = match std::fs::read_to_string(root.join("profiles.ini")) {
-        Ok(c) => c,
-        Err(_) => return vec![],
-    };
+    match std::fs::read_to_string(root.join("profiles.ini")) {
+        Ok(content) => parse_profiles_ini(&content, root),
+        Err(_) => vec![],
+    }
+}
 
+fn parse_profiles_ini(content: &str, root: &Path) -> Vec<(String, PathBuf)> {
     let mut profiles = Vec::new();
     let mut name: Option<String> = None;
     let mut path: Option<String> = None;
@@ -200,4 +202,30 @@ pub fn register_module(
     }
 
     RegisterReport { succeeded, failed }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_relative_and_absolute_profiles() {
+        let ini = "[General]\r\nStartWithLastProfile=1\r\n\r\n\
+                   [Profile0]\r\nName=default-release\r\nIsRelative=1\r\nPath=Profiles/abc.default-release\r\n\r\n\
+                   [Install308046B0AF4A39CB]\r\nDefault=Profiles/abc.default-release\r\n\r\n\
+                   [Profile1]\r\nName=work\r\nIsRelative=0\r\nPath=/ff/work\r\n";
+        let root = Path::new("root");
+        assert_eq!(
+            parse_profiles_ini(ini, root),
+            vec![
+                ("default-release".to_string(), root.join("Profiles/abc.default-release")),
+                ("work".to_string(), PathBuf::from("/ff/work")),
+            ]
+        );
+    }
+
+    #[test]
+    fn section_without_name_is_skipped() {
+        assert!(parse_profiles_ini("[Profile0]\nPath=x\n", Path::new("r")).is_empty());
+    }
 }

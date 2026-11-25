@@ -2,20 +2,45 @@ const { invoke } = window.__TAURI__.core;
 
 const BADGE_GLYPHS = { pass: "✓", warning: "!", fail: "✕" };
 
-// Decorative: the headline next to it already names the state.
-function badge(status) {
-  return status ? `<span class="badge ${status}" aria-hidden="true">${BADGE_GLYPHS[status]}</span>` : "";
+// Backend strings (reader names, profile names, paths, tool stderr) are
+// untrusted, so the UI is built with DOM nodes and textContent, never innerHTML.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
 }
 
-// Backend strings (reader names, profile names, paths, tool stderr) are
-// untrusted: escape them before they go into innerHTML.
-function esc(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// Each item is a string, a node, or an array of those (one <li> per item).
+function list(items) {
+  const ul = el("ul");
+  for (const item of items) {
+    const li = el("li");
+    li.append(...[item].flat());
+    ul.append(li);
+  }
+  return ul;
+}
+
+function showResult(statusEl, msg, items) {
+  const headline = el("p", "headline");
+  if (msg.status) {
+    // Decorative: the headline next to it already names the state.
+    const badge = el("span", `badge ${msg.status}`, BADGE_GLYPHS[msg.status]);
+    badge.setAttribute("aria-hidden", "true");
+    headline.append(badge);
+  }
+  headline.append(msg.headline);
+  statusEl.replaceChildren(headline, el("p", "detail", msg.detail));
+  if (items.length) statusEl.append(list(items));
+}
+
+function showReport(statusEl, okLabel, report) {
+  statusEl.replaceChildren();
+  if (report.succeeded.length) statusEl.append(el("p", "headline", okLabel), list(report.succeeded));
+  if (report.failed.length) {
+    statusEl.append(el("p", "headline", "Failed:"), list(report.failed.map(([p, err]) => `${p}: ${err}`)));
+  }
 }
 
 const MESSAGES = {
@@ -50,15 +75,7 @@ async function checkReader() {
     const result = await invoke("check_reader");
     const msg = MESSAGES[result.outcome] || { headline: "Unknown state", detail: "" };
 
-    const readerList = result.readers
-      .map((r) => `<li>${esc(r.name)}: ${r.card_present ? "card present" : "no card"}</li>`)
-      .join("");
-
-    statusEl.innerHTML = `
-      <p class="headline">${badge(msg.status)}${msg.headline}</p>
-      <p class="detail">${msg.detail}</p>
-      ${readerList ? `<ul>${readerList}</ul>` : ""}
-    `;
+    showResult(statusEl, msg, result.readers.map((r) => `${r.name}: ${r.card_present ? "card present" : "no card"}`));
   } catch (e) {
     statusEl.textContent = "Error checking reader: " + e;
   }
@@ -96,15 +113,7 @@ async function checkMiddleware() {
     lastMiddlewarePath = result.valid_path || null;
     lastMiddlewareName = result.found.length > 0 ? result.found[0].name : null;
 
-    const foundList = result.found
-      .map((c) => `<li>${esc(c.name)} <span class="path">(${esc(c.path)})</span></li>`)
-      .join("");
-
-    statusEl.innerHTML = `
-      <p class="headline">${badge(msg.status)}${msg.headline}</p>
-      <p class="detail">${msg.detail}</p>
-      ${foundList ? `<ul>${foundList}</ul>` : ""}
-    `;
+    showResult(statusEl, msg, result.found.map((c) => [`${c.name} `, el("span", "path", `(${c.path})`)]));
 
     // A valid module path is what module 4 needs to check/register against.
     if (lastMiddlewarePath) checkNss();
@@ -146,13 +155,7 @@ async function checkTrust() {
   try {
     const result = await invoke("check_trust");
     const msg = TRUST_MESSAGES[result.outcome] || { headline: "Unknown state", detail: "" };
-    const rootsList = result.roots_found.map((r) => `<li>${esc(r)}</li>`).join("");
-
-    statusEl.innerHTML = `
-      <p class="headline">${badge(msg.status)}${msg.headline}</p>
-      <p class="detail">${msg.detail}</p>
-      ${rootsList ? `<ul>${rootsList}</ul>` : ""}
-    `;
+    showResult(statusEl, msg, result.roots_found);
   } catch (e) {
     statusEl.textContent = "Error checking trust store: " + e;
   }
@@ -187,13 +190,7 @@ async function installCerts() {
 
   try {
     const report = await invoke("install_certs", { paths });
-    const succeeded = report.succeeded.map((p) => `<li>${esc(p)}</li>`).join("");
-    const failed = report.failed.map(([p, err]) => `<li>${esc(p)}: ${esc(err)}</li>`).join("");
-
-    statusEl.innerHTML = `
-      ${succeeded ? `<p class="headline">Installed:</p><ul>${succeeded}</ul>` : ""}
-      ${failed ? `<p class="headline">Failed:</p><ul>${failed}</ul>` : ""}
-    `;
+    showReport(statusEl, "Installed:", report);
     checkTrust();
   } catch (e) {
     statusEl.textContent = "Error installing certs: " + e;
@@ -240,15 +237,7 @@ async function checkNss() {
   try {
     const result = await invoke("check_nss", { modulePath: lastMiddlewarePath });
     const msg = NSS_MESSAGES[result.outcome] || { headline: "Unknown state", detail: "" };
-    const profileList = result.profiles
-      .map((p) => `<li>${esc(p.name)}: ${p.module_registered ? "registered" : "not registered"}</li>`)
-      .join("");
-
-    statusEl.innerHTML = `
-      <p class="headline">${badge(msg.status)}${msg.headline}</p>
-      <p class="detail">${msg.detail}</p>
-      ${profileList ? `<ul>${profileList}</ul>` : ""}
-    `;
+    showResult(statusEl, msg, result.profiles.map((p) => `${p.name}: ${p.module_registered ? "registered" : "not registered"}`));
   } catch (e) {
     statusEl.textContent = "Error checking Firefox profiles: " + e;
   }
@@ -279,13 +268,7 @@ async function registerNss() {
       modulePath: lastMiddlewarePath,
     });
 
-    const succeeded = report.succeeded.map((p) => `<li>${esc(p)}</li>`).join("");
-    const failed = report.failed.map(([p, err]) => `<li>${esc(p)}: ${esc(err)}</li>`).join("");
-
-    statusEl.innerHTML = `
-      ${succeeded ? `<p class="headline">Registered:</p><ul>${succeeded}</ul>` : ""}
-      ${failed ? `<p class="headline">Failed:</p><ul>${failed}</ul>` : ""}
-    `;
+    showReport(statusEl, "Registered:", report);
   } catch (e) {
     statusEl.textContent = "Error registering with Firefox: " + e;
   }
