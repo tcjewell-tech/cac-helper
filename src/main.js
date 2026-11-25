@@ -3,7 +3,7 @@ const { invoke } = window.__TAURI__.core;
 const BADGE_GLYPHS = { pass: "✓", warning: "!", fail: "✕" };
 
 // Backend strings (reader names, profile names, paths, tool stderr) are
-// untrusted, so the UI is built with DOM nodes and textContent, never innerHTML.
+// untrusted, so the UI is built with DOM nodes and textContent, never HTML strings.
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
